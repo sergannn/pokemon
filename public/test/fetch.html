@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>My Heading</h2>
+
+<p>Play around with the code and click on the "Run" button to view the result.</p>
+
+<p id="demo"></p>
+
+<script>const token = "E5Anp555fjeGpV3vncH00E15ayAh1imaJW0JoiL";
+const url = "https://donationalerts.com/api/v1/custom_event";
+
+const headers = {
+  "Authorization": `Bearer ${token}`,
+  "Content-Type": "application/json"
+};
+
+const payload = {
+  title: "Custom Event Title",
+  description: "This is a description of my custom event.",
+  amount: 10,
+  currency: "USD",
+  type: "one-time",
+  tags: ["custom", "example"],
+  image_url: "https://example.com/event-image.jpg"
+};
+
+fetch(url, {
+  method: 'POST',
+  headers: headers,
+  body: JSON.stringify(payload)
+})
+.then(response => {
+  if (!response.ok) {
+    throw new Error('Network response was not ok');
+  }
+  return response.json();
+})
+.then(data => {
+  console.log("Event created successfully!");
+  console.log(`Event ID: ${data.id}`);
+})
+.catch(error => {
+  console.error('There was a problem with the fetch operation:', error);
+});
+
+
+</script>
+
+</body>
+</html>
