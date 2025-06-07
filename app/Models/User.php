@@ -24,7 +24,10 @@ class User extends Authenticatable implements JWTSubject
         'name',
         'email',
         'password',
-        'attempts'
+        'attempts',
+        'coins',
+        'timer',
+        'last_update' // Добавьте это поле
     ];
 
     /**
@@ -88,5 +91,72 @@ class User extends Authenticatable implements JWTSubject
         ];
 
         DB::table('present_user')->insert($pivotData);
+    }
+
+    /**
+     * Add coins to the user's balance.
+     *
+     * @param int $amount
+     * @return int
+     */
+    public function addCoins(int $amount): int
+    {
+        $this->coins += $amount;
+        $this->save();
+        
+        return $this->coins;
+    }
+
+    /**
+     * Deduct coins from the user's balance.
+     *
+     * @param int $amount
+     * @return int|bool Returns new balance if successful, false if insufficient coins
+     */
+    public function deductCoins(int $amount)
+    {
+        if ($this->coins < $amount) {
+            return false;
+        }
+        
+        $this->coins -= $amount;
+        $this->save();
+        
+        return $this->coins;
+    }
+
+    /**
+     * Check if user has enough coins.
+     *
+     * @param int $amount
+     * @return bool
+     */
+    public function hasEnoughCoins(int $amount): bool
+    {
+        return $this->coins >= $amount;
+    }
+
+    /**
+     * Set timer to a specific countdown value.
+     *
+     * @param int $seconds
+     * @return int
+     */
+    public function setTimer(int $seconds): int
+    {
+        $this->timer = $seconds;
+        $this->save();
+        
+        return $this->timer;
+    }
+
+    /**
+     * Reset timer to zero.
+     *
+     * @return int
+     */
+    public function resetTimer(): int
+    {
+        return $this->setTimer(0);
     }
 }

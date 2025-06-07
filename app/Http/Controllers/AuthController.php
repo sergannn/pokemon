@@ -20,9 +20,39 @@ class AuthController extends Controller
      * @return void
      */
     public function __construct() {
-        $this->middleware( 'auth:api', [ 'except' => [ 'login', 'register' ] ] );
+//это про названия путей, а не методов
+        $this->middleware( 'auth:api', [ 'except' => [ 'login', 'register','checkusername','checknickname','changepassword' ] ] );
     }
-
+    public function changePassword(Request $request)
+    {
+      //  echo 123;exit();
+//      echo $request->email;
+        $request->validate([
+            'old_password' => 'required',
+            'new_password' => 'required',
+        ]);
+      // Find user by email and verify password
+    
+   $user = User::where('email', $request->email)->first();
+     
+      if (!$user || !Hash::check($request->old_password, $user->password)) {
+          return response()->json([
+              'message' => 'wrong email или pass'
+          ], 401);
+      }
+       
+       //echo $user->password;
+      // exit();
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+    
+        // Revoke all tokens to force re-login
+       // $user->tokens()->delete();
+    
+        return response()->json([
+            'message' => 'changed'
+        ]);
+    }
     /**
      * Get a JWT via given credentials.
      *
@@ -30,7 +60,7 @@ class AuthController extends Controller
      */
     public function login() {
         $credentials = request( [ 'email', 'password' ] );
-
+       // print_r( $credentials);
         if ( ! $token = auth()->attempt( $credentials ) ) {
             return response()->json( [ 'error' => 'Unauthorized' ], 401 );
         }
@@ -116,4 +146,33 @@ class AuthController extends Controller
             'expires_in' => auth()->factory()->getTTL() * 60
         ] );
     }
+
+    public function checkUsername(Request $request)
+{
+    
+    $isAvailable = User::where('email', $request->username)->doesntExist();
+    if(!$isAvailable) { $notAvailable = User::where('email',$request->username)->get(); }
+      
+    return response()->json([
+        'success' => true,
+        'available' => $isAvailable,
+        'name'=> isset($notAvailable) ? $notAvailable[0]->name : false,
+        'message' => $isAvailable 
+            ? 'Имя пользователя доступно'
+            : 'Имя пользователя уже занято'
+    ]);
+}
+public function checkNickname(Request $request)
+{
+    
+    $isAvailable = User::where('name', $request->nickname)->doesntExist();
+    
+    return response()->json([
+        'success' => true,
+        'available' => $isAvailable,
+        'message' => $isAvailable 
+            ? 'Имя пользователя доступно'
+            : 'Имя пользователя уже занято'
+    ]);
+}
 }
