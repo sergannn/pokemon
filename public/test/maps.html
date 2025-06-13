@@ -9,114 +9,39 @@
 <style>
 body { margin: 0; padding: 0; }
 #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+#progress { position: absolute; top: 10px; left: 10px; background: white; padding: 5px; z-index: 1000; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="progress">Loading: 0%</div>
 <script>
 const accessToken = 'pk.eyJ1Ijoic2VyZ2Fubm4iLCJhIjoiY2w2NWw0ejZ3MDdmZDNpbm84eWtqOWx0cSJ9.KdhQrNoti2fgGSRSqDiyHQ';
+let currentBatch = 0;
+const batchSize = 1000; // Количество полигонов за один запрос
+
 async function initMap() {
     const map = new mapboxgl.Map({
         container: 'map',
         style: 'mapbox://styles/mapbox/standard',
-        center: [30.3352, 59.9346], // Default center
+        center: [30.3352, 59.9346],
         zoom: 12,
         accessToken: accessToken
     });
 
     await map.on('load', async () => {
         try {
-            const boundaryResponse = await fetch(`
-             https://api.geoapify.com/v2/place-details?id=5100af3bb953553e405988c2c2a453f94d40f00101f901cc9f8f0000000000c00205920323486973746f7269632043656e747265206f66205361696e742d50657465727362757267&features=details,details.names&apiKey=b8568cb9afc64fad861a69edbddb2658`);
-           // https://api.geoapify.com/v2/place-details?id=51fa0b3d62f4503e4059b6dac35e28f84d40f00101f9018f6c060000000000c002089203105361696e742050657465727362757267&apiKey=b8568cb9afc64fad861a69edbddb2658');
-           
+            const boundaryResponse = await fetch(
+            'https://api.geoapify.com/v2/place-details?id=51fa0b3d62f4503e4059b6dac35e28f84d40f00101f9018f6c060000000000c00208&features=details,details.names&apiKey=b8568cb9afc64fad861a69edbddb2658');
+ 
+            //'https://api.geoapify.com/v2/place-details?id=51b83d4162bb8f3e405924d236fe44f94d40f00101f901239e170000000000c002079203093138383638392b7275&features=details,details.names&apiKey=b8568cb9afc64fad861a69edbddb2658');
             const boundaryData = await boundaryResponse.json();
-            const response = await fetch("/test/maps.php", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(boundaryData)
-            });
-
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             
-            const data = await response.json();
-
-            const polygons = [];
-            for (let i = 0; i < data.length; i++) {
-                const polygon = data[i].map(point => [point.lat, point.long]);
-                polygons.push(polygon);
-            }
-
-            const lastPolygon = polygons[polygons.length - 1];
-            const lastPoint = lastPolygon[0]; // Assuming the first point is the center
+            // Инициализация источников и слоев
+            initSourcesAndLayers(map, boundaryData);
             
-            // Calculate the center of the polygon
-            let centerX = 0;
-            let centerY = 0;
-            for (let i = 0; i < lastPolygon.length; i++) {
-                centerX += lastPolygon[i][0];
-                centerY += lastPolygon[i][1];
-            }
-            centerX /= lastPolygon.length;
-            centerY /= lastPolygon.length;
-
-            // Set the map center and zoom level
-            map.setCenter([centerX, centerY]);
-            map.setZoom(15); // Adjust this value as needed
-
-            map.addSource('polygons', {
-                'type': 'geojson',
-                'data': {
-                    'type': 'FeatureCollection',
-                    'features': []
-                }
-            });
-            map.addSource('polygons2', {
-                'type': 'geojson',
-                'data': {
-                    'type': 'FeatureCollection',
-                    'features': []
-                }
-            });
-            map.addLayer({
-                'id': 'polygons2',
-                'type': 'fill',
-                'source': 'polygons2',
-                'layout': {},
-                'paint': {
-                    'fill-color': 'gray',
-                    'fill-opacity': 0.5
-                }
-            });
-            map.addLayer({
-                'id': 'polygons',
-                'type': 'line',
-                'source': 'polygons',
-                'layout': {},
-                'paint': {
-                    'fill-color': '#0080ff',
-                    'fill-opacity': 0.5
-                }
-            });
-
-            const features = polygons.map((polygon) => ({
-                type: 'Feature',
-                geometry: {
-                    type: 'Polygon',
-                    coordinates: [polygon]
-                }
-            }));
-
-            map.getSource('polygons').setData({
-                type: 'FeatureCollection',
-                features: features
-            });
-            map.getSource('polygons2').setData(boundaryData);
-            console.log('Boundary data successfully added to source');
-            window.sermap = map;
+            // Начало пошаговой загрузки полигонов
+            await loadPolygonsInBatches(map, boundaryData);
 
         } catch (error) {
             console.error('Error initializing map:', error);
@@ -124,6 +49,117 @@ async function initMap() {
     });
 }
 
+function initSourcesAndLayers(map, boundaryData) {
+    map.addSource('polygons', {
+        'type': 'geojson',
+        'data': {
+            'type': 'FeatureCollection',
+            'features': []
+        }
+    });
+    
+    map.addSource('boundary', {
+        'type': 'geojson',
+        'data': boundaryData
+    });
+    
+    map.addLayer({
+        'id': 'boundary-fill',
+        'type': 'fill',
+        'source': 'boundary',
+        'layout': {},
+        'paint': {
+            'fill-color': 'gray',
+            'fill-opacity': 0.5
+        }
+    });
+    
+    map.addLayer({
+        'id': 'polygons-line',
+        'type': 'line',
+        'source': 'polygons',
+        'layout': {},
+        'paint': {
+            'line-color': '#0080ff',
+            'line-width': 2
+        }
+    });
+    
+    window.sermap = map;
+}
+async function loadPolygonsInBatches(map, boundaryData) {
+    let allPolygons = [];
+    
+    // Первый запрос для получения информации
+    const initResponse = await fetch("/test/maps.php?init=true", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(boundaryData)
+    });
+    
+    if (!initResponse.ok) throw new Error(`HTTP error! status: ${initResponse.status}`);
+    
+    const initData = await initResponse.json();
+    const totalCells = initData.total;
+    let currentBatch = 0;
+    let processedCells = 0;
+    
+    // Пошаговая загрузка полигонов
+    while (true) {
+        const response = await fetch(`/test/maps.php?batch=${currentBatch}&batchSize=${batchSize}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(boundaryData)
+        });
+        
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        allPolygons = allPolygons.concat(data.polygons);
+        processedCells = data.totalProcessed;
+        currentBatch++;
+        
+        // Обновление карты каждые 5 батчей или при завершении
+        if (currentBatch % 5 === 0 || data.complete) {
+            updateMapWithPolygons(map, allPolygons);
+        }
+        
+        // Обновление индикатора прогресса
+        const percent = Math.round((processedCells / totalCells) * 100);
+        document.getElementById('progress').textContent = `Loading: ${percent}%`;
+        
+        // Выход из цикла при завершении
+        if (data.complete || processedCells >= totalCells) {
+            updateMapWithPolygons(map, allPolygons);
+            document.getElementById('progress').textContent = 'Loading complete!';
+            break;
+        }
+        
+        // Небольшая задержка
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+}
+
+function updateMapWithPolygons(map, polygons) {
+    const features = polygons.map((polygon) => ({
+        type: 'Feature',
+        geometry: {
+            type: 'Polygon',
+            coordinates: [polygon.map(point => [point.lat, point.long])]
+        }
+    }));
+    
+    map.getSource('polygons').setData({
+        type: 'FeatureCollection',
+        features: features
+    });
+}
 
 window.onload = initMap;
 </script>
